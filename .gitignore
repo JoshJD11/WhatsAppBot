@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Secrets and local configuration
+.env
+credentials/
+*.json.key
+service-account*.json
+
+# Local Excel copies used for development (the template in templates/ is tracked)
+data/

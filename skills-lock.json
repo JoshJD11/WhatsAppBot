@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "async-python-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/python-development/skills/async-python-patterns/SKILL.md",
+      "computedHash": "35bc80697c3ba879e32cee7e2728ed2db0d16499875bb718736fd1160fddc2d6"
+    },
     "fastapi-python": {
       "source": "mindrally/skills",
       "sourceType": "github",
@@ -18,6 +24,12 @@
       "sourceType": "github",
       "skillPath": "skills/gemini-api-dev/SKILL.md",
       "computedHash": "3dd98822c90c18be4f7c9484419aaa3aeb62fc729d63527880390cb370ce9907"
+    },
+    "python-patterns": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/python-patterns/SKILL.md",
+      "computedHash": "3ce7d51e18d3e2fa79635e569e73a8d269bc484ff1095fae7c414543f023e95e"
     },
     "python-testing-patterns": {
       "source": "wshobson/agents",

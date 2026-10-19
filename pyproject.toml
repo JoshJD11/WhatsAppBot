@@ -1,0 +1,9 @@
+[project]
+name = "whatsappbot"
+version = "0.1.0"
+description = "WhatsApp bot that answers Bosca customers from an Excel file on Google Drive."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

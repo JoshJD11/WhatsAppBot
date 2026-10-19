@@ -4,7 +4,7 @@
 WhatsAppBot answers the customer messages that reach the WhatsApp number of **Bosca**, a Costa Rican laser art business whose main product is handcrafted wooden **music boxes**. The full business context lives in `~/Desktop/Bosca/CLAUDE.md` (read it for the brand and its rules, not for its code).
 
 - **Type:** WhatsApp chatbot (backend service, no web interface)
-- **Status:** Planning. No code yet.
+- **Status:** First version built and tested locally with fakes (see Current Progress). Not yet connected to Meta, Gemini or Drive with real credentials.
 - **Target users:** People in Costa Rica who write to Bosca on WhatsApp asking about products, customizations, prices, or orders.
 - **Business number:** +506 7030 4072 (the same number the business already uses).
 
@@ -46,7 +46,7 @@ Both modes share everything except the reply engine: WhatsApp integration, Excel
 | Owner notification | Sent to +506 7141 3393 **only while its 24 hour window is open** (option A, see Notes). |
 | Hosting | First on the owner's computer for development, then Vercel or a similar free host. |
 
-## Architecture (planned)
+## Architecture
 ```
 WhatsApp customer
       │
@@ -60,7 +60,7 @@ Meta Cloud API ──webhook──► Bot server (Python)
                               └── Excel on Google Drive: knowledge (read, cached) + requests sheet (write)
 ```
 
-- **Webhook:** Meta sends each incoming message to a public HTTPS URL. During local development a tunnel exposes the computer (tool not decided).
+- **Webhook:** Meta sends each incoming message to a public HTTPS URL. During local development an ngrok tunnel with a free static domain exposes the computer.
 - **Excel loading:** download the `.xlsx` from Drive with a Google service account (the file is shared with it), parse it, and cache it in memory. Reload it on a timer and with an admin command, not on every message.
 - **AI context:** the Excel content goes into the prompt as the only allowed source. The system prompt sets the scope, the tone, and the refusal rule.
 - **Provider abstraction:** keep the LLM behind a small interface so Gemini can be replaced (for example by Claude with API credits) without changing the rest of the bot.
@@ -93,15 +93,50 @@ Meta Cloud API ──webhook──► Bot server (Python)
 - **Data:** Google Drive API (service account) and `openpyxl` to read and write the `.xlsx`.
 - **Web framework:** FastAPI, for the webhook server.
 - **Tools:** Git.
-- **Project skills** (in `.agents/skills`, linked from `.claude/skills`): `gemini-api-dev`, `python-testing-patterns`, `fastapi-python`, `xlsx-manipulation`, `whatsapp-automation`. The `whatsapp-automation` skill also covers broadcasts, template messages, and outbound notifications. Ignore those parts: this bot only replies and never sends templates (see Decisions Made).
-- **Not decided:** tunnel for local development, test runner, hosting provider for production. Ask before choosing any of them.
-- **Tunnel for local development:** the owner has little experience with exposing a computer to the internet and accepts any tool, but Claude must **ask first** and explain, in plain Spanish, what it does, its risks (the computer gets a public URL, anyone who finds it can send requests, what stays protected by the webhook signature check), whether it is free, and how to shut it down.
+- **Project skills** (in `.agents/skills`, linked from `.claude/skills`): `gemini-api-dev`, `python-testing-patterns`, `fastapi-python`, `xlsx-manipulation`, `whatsapp-automation`, `python-patterns`, `async-python-patterns`. Follow `python-patterns` and `async-python-patterns` for all Python code (typing, idioms, no blocking calls in the event loop). The `whatsapp-automation` skill also covers broadcasts, template messages, and outbound notifications. Ignore those parts: this bot only replies and never sends templates (see Decisions Made).
+- **Python version:** 3.12+ required; developed on Python 3.14 in a `.venv` virtual environment.
+- **Dependencies:** pinned in `requirements.txt` (runtime) and `requirements-dev.txt` (adds pytest): fastapi, uvicorn, httpx, google-genai, google-api-python-client, google-auth, openpyxl, python-dotenv.
+- **Gemini SDK:** `google-genai` with the **Interactions API** (`client.interactions.create`), as the `gemini-api-dev` skill requires. The legacy `google-generativeai` package and `generate_content` are not used.
+- **Graph API version:** `v26.0` (configurable with `GRAPH_API_VERSION`).
+- **Test runner:** pytest.
+- **Tunnel for local development:** **ngrok** with a free static domain (`ngrok http --url=<NGROK_DOMAIN> 8000`), chosen by the owner on 2026-10-18 so the Meta callback URL never changes. It replaced the Cloudflare quick tunnel (chosen 2026-10-16), whose URL changed on every run. The owner creates the ngrok account, installs the client, adds the authtoken and claims the domain; Claude never asks for or handles the authtoken. `NGROK_DOMAIN` lives in `.env`. `scripts/start.sh` starts uvicorn and ngrok together.
+- **Not decided:** hosting provider for production. Ask before choosing it.
 
 ## Project Structure
-To be defined in the first coding session.
+```
+WhatsAppBot/
+├── bot/
+│   ├── main.py          # FastAPI app: /webhook (GET handshake, POST messages), /health, lifespan, reload timer
+│   ├── bot.py           # Message flow: dedup, admin commands, pause, rate limit, engines, handoff
+│   ├── admin.py         # The two #bosca commands
+│   ├── config.py        # Settings from environment variables
+│   ├── state.py         # In-memory runtime state (mode, pauses, rate limit, history, owner window)
+│   ├── knowledge.py     # Excel layout, parsing, default bot messages, shared formatting
+│   ├── workbook.py      # Knowledge cache and serialized writes to the Solicitudes sheet
+│   ├── excel_store.py   # DriveExcelStore (service account) and LocalExcelStore
+│   ├── whatsapp.py      # Signature check, webhook parsing, WhatsAppClient (text replies only)
+│   ├── template.py      # Builds the Excel template
+│   ├── text.py          # Normalization, outgoing text sanitizer (no emojis, no double hyphens)
+│   └── engines/         # base.py (Reply), rule.py (menu + keywords), ai.py (LLMProvider + Gemini)
+├── scripts/
+│   ├── create_excel_template.py
+│   └── start.sh               # Starts uvicorn, waits for /health, then ngrok with NGROK_DOMAIN
+├── templates/bosca_bot.xlsx   # Generated template, no business data
+├── tests/                     # pytest suite with fakes for WhatsApp, Gemini and Drive
+├── .env.example
+└── requirements*.txt
+```
 
 ## Useful Commands
-None yet.
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt           # Install dependencies
+pytest                                        # Run the tests
+uvicorn bot.main:app --port 8000              # Run the bot (reads .env)
+scripts/start.sh                              # Bot + ngrok tunnel (reads NGROK_DOMAIN from .env)
+ngrok http --url=<NGROK_DOMAIN> 8000          # Tunnel only, if uvicorn is already running
+python -m scripts.create_excel_template       # Regenerate templates/bosca_bot.xlsx
+```
 
 ## Rules and Conventions
 ### Always
@@ -160,7 +195,35 @@ None yet.
 - On Vercel there is no persistent memory between requests. The current mode, the menu position of each customer, the handoff pauses, and the owner's 24 hour window would be lost. This must be solved before production (see Open Questions).
 
 ## Open Questions
-- **Where to keep state** (current mode, menu position, handoff pauses, owner's last message time) if the production host is serverless like Vercel. **Ask the owner when building it**, explaining the options in plain Spanish. Not a problem while the bot runs on the owner's computer.
-- **Excel design:** sheets and columns (products, prices, FAQ, menu, keywords, messages, requests). The owner will request and explain it in a later session.
-- **Tunnel tool** for local development (ask first, see Stack and Tools).
+- **Where to keep state** (current mode, handoff pauses, owner's last message time) if the production host is serverless like Vercel. Locally it is saved in `data/state.json` (`STATE_FILE`), which a serverless host cannot keep. **Ask the owner when building it**, explaining the options in plain Spanish. Not a problem while the bot runs on the owner's computer.
+- **Excel design:** a provisional layout is built (see Current Progress). The owner will explain the final design in a later session; adjust `bot/knowledge.py` and `bot/template.py` together.
+- **Coexistence onboarding:** several sources say connecting a number that runs on the WhatsApp Business app to the Cloud API (coexistence) goes through Meta's Embedded Signup and may require being a Tech Provider or using a Business Solution Provider. Not verified against Meta's official docs. Check before moving from Meta's test number to +506 7030 4072, and confirm any provider is free.
+- **Gemini model and free tier limits:** `GEMINI_MODEL=gemini-3.5-flash-lite` in `.env.example`. Free tier availability and limits for current models were not confirmed from an official Google page; check the live quota in AI Studio.
 - **Production host:** to be decided later (Vercel or similar).
+
+## Current Progress
+Last updated: 2026-10-16.
+
+### Built and verified
+- Full bot as described in Goal, Decisions Made and Admin Commands: webhook handshake and signature check, dedup by message ID, admin commands before any engine, rule engine, AI engine with automatic per-message fallback, handoff (customer reply, owner notification only inside the 24 hour window, row in `Solicitudes`, 60 minute pause), per-customer rate limit, outgoing sanitizer.
+- 155 pytest tests passed in the first version (`pytest`). They use fakes, so no real Meta, Gemini or Drive call has been made yet.
+- The real server was started with uvicorn and a local Excel: `/health`, the verify handshake, a signed webhook (handoff row written to the Excel) and a rejected bad signature (403) all worked.
+
+- **Added 2026-10-16 (owner request):** the state that matters after a restart (mode, active pauses, owner's last message time) is saved to `data/state.json` and restored at startup; the saved mode wins over `BOT_MODE`. When the owner writes to a customer from the WhatsApp Business app (`smb_message_echoes` webhook, coexistence only), the bot pauses with that customer for `HANDOFF_PAUSE_MINUTES` from the owner's last message and clears its AI history.
+- **174 pytest tests pass** after these changes.
+- **Added 2026-10-18:** ngrok replaces cloudflared; `scripts/start.sh` with 8 tests (fake uvicorn and ngrok). **182 tests pass.**
+
+### Design choices made in this session (change if the owner disagrees)
+- **Excel layout (provisional):** sheets `Instrucciones`, `Productos`, `Preguntas`, `Menu`, `Mensajes`, `Solicitudes`, with Spanish headers matched ignoring case and accents. The template contains the menu from CLAUDE.md (1 Cajas musicales, 2 Otros productos, 3 Hablar con una persona) and the bot's default messages, but no products, prices or policies.
+- **Bot messages:** defaults live in `DEFAULT_MESSAGES` (`bot/knowledge.py`) and the `Mensajes` sheet overrides them. They use "tú".
+- **AI:** structured JSON output (`action`: answer, handoff, off_topic). Off-topic replies always use the Excel's `fuera_de_tema` text, not the model's text. Conversations are not stored on Google's side (`store=False`); the last 10 turns are kept in memory for 30 minutes.
+- **Rule mode:** a menu number picks an option; otherwise the longest matching keyword wins (menu, then questions, then product names and keywords); a greeting or the first message in 12 hours shows the welcome and menu; anything else gets `no_entiendo` plus the menu (which includes the handoff option).
+- **Media messages** (photos, audio, stickers) get the `solo_texto` reply. Reactions, status updates and `smb_message_echoes` are ignored.
+- `#bosca menú` (with accent) is accepted as the same command as `#bosca menu`.
+- If the Excel never loaded, every customer message goes to handoff, so nobody gets silence.
+
+### Not done
+- **Meta setup (2026-10-18):** the owner created the developer account, the app, the test number, the recipients, the App secret and the `.env` (steps 1 to 6 of the stage 3 guide). Pending: install ngrok, claim the static domain, set `NGROK_DOMAIN`, run `scripts/start.sh` and configure the callback URL `https://<NGROK_DOMAIN>/webhook` in Meta once. No end-to-end test with Meta has run yet. Gemini key and Drive service account are still missing. `cloudflared` was installed earlier but is no longer used.
+- The owner-reply pause cannot be tested with Meta's test number; verify it after the coexistence onboarding.
+- **Owner's 24 hour window:** the owner asked whether the bot could send the daily message from the owner's number automatically after a restart. It cannot (the bot only controls the business number, and messaging the owner first needs a paid template). Saving the state to a file solved the restart part; the owner still writes once a day, optionally with a phone automation such as iPhone Shortcuts.
+
