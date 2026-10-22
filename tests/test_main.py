@@ -153,3 +153,16 @@ def test_startup_without_saved_state_uses_bot_mode(workbook_bytes, tmp_path):
     with TestClient(create_app(services)):
         assert services.state.mode == "ai"
 
+
+
+def test_account_update_webhook_is_logged_without_reply(setup, caplog):
+    client, sender, _ = setup
+    payload = {
+        "object": "whatsapp_business_account",
+        "entry": [{"changes": [{"field": "account_update", "value": {
+            "event": "PARTNER_REMOVED", "disconnection_info": {"reason": "PRIMARY_INACTIVITY"}}}]}],
+    }
+    with caplog.at_level("WARNING"):
+        assert _post(client, payload).status_code == 200
+    assert "PARTNER_REMOVED (PRIMARY_INACTIVITY)" in caplog.text
+    assert sender.sent == []

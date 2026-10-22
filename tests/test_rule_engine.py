@@ -49,6 +49,22 @@ def test_greeting_shows_welcome_and_menu(knowledge):
     assert "3. Hablar con una persona" in reply.text
 
 
+def test_catalog_request_shows_menu(knowledge):
+    reply = rule_reply(knowledge, "Quiero ver el CATÁLOGO", is_new_conversation=False)
+    assert reply.text.startswith(DEFAULT_MESSAGES["menu_intro"][0])
+    assert "1. Cajas musicales" in reply.text
+
+
+def test_specific_product_wins_over_catalog_request(knowledge):
+    reply = rule_reply(knowledge, "catálogo del llavero prueba", is_new_conversation=False)
+    assert "*Llavero Prueba*" in reply.text
+
+
+def test_catalog_request_without_menu_goes_to_handoff():
+    knowledge = Knowledge(loaded=True)
+    assert rule_reply(knowledge, "qué venden", is_new_conversation=False).handoff
+
+
 def test_unknown_message_in_new_conversation_shows_welcome(knowledge):
     reply = rule_reply(knowledge, "qwerty", is_new_conversation=True)
     assert reply.text.startswith(DEFAULT_MESSAGES["bienvenida"][0])

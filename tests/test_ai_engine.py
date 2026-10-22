@@ -76,6 +76,7 @@ def test_provider_receives_prompt_history_and_truncated_message(knowledge):
 def test_system_prompt_contains_rules_and_business_data(knowledge):
     prompt = build_system_prompt(knowledge)
     assert "Never invent" in prompt
+    assert "Never send the whole product list" in prompt
     assert "Respuesta de prueba sobre envíos." in prompt
     assert "{knowledge}" not in prompt
 

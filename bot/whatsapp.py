@@ -117,6 +117,26 @@ def parse_owner_replies(payload: dict[str, Any]) -> list[OwnerReply]:
     return replies
 
 
+def parse_account_events(payload: dict[str, Any]) -> list[str]:
+    """Describe `account_update` events, such as Meta disconnecting the number.
+
+    A `PARTNER_REMOVED` event with reason `PRIMARY_INACTIVITY` means the
+    WhatsApp Business app on the main phone was not opened for about 14 days.
+    """
+    if payload.get("object") != "whatsapp_business_account":
+        return []
+    events = []
+    for entry in payload.get("entry") or []:
+        for change in entry.get("changes") or []:
+            if change.get("field") != "account_update":
+                continue
+            value = change.get("value") or {}
+            event = str(value.get("event", "UNKNOWN"))
+            reason = (value.get("disconnection_info") or {}).get("reason")
+            events.append(f"{event} ({reason})" if reason else event)
+    return events
+
+
 class MessageSender(Protocol):
     async def send_text(self, to: str, text: str) -> bool: ...
 

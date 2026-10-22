@@ -118,7 +118,7 @@ Meta needs a public HTTPS URL. The project uses **ngrok** with its free **static
 One-time setup (done by the owner, outside the project):
 
 1. Create a free account at [ngrok.com](https://ngrok.com) and install the ngrok client.
-2. Add your authtoken to the ngrok client (`ngrok config add-authtoken ...`). It stays in ngrok's own config file, never in this project.
+2. Add your authtoken to the ngrok client **without sudo** (`ngrok config add-authtoken ...`). It stays in your user's ngrok config file (`~/.config/ngrok/ngrok.yml`), never in this project.
 3. Claim your free static domain in the ngrok dashboard (Domains), for example `your-name.ngrok-free.app`.
 4. Put that domain in `.env` as `NGROK_DOMAIN` (only the domain, without `https://`).
 
@@ -134,7 +134,7 @@ The script reads `NGROK_DOMAIN` from `.env`, starts uvicorn, waits until `/healt
 ngrok http --url=<NGROK_DOMAIN> 8000
 ```
 
-`Ctrl+C` stops both. To run them by hand instead, start uvicorn first and then the ngrok command above in a second terminal.
+`Ctrl+C` stops both. Neither ngrok nor the script needs `sudo`, and the script refuses to run as root: a tunnel open to the internet should not have administrator rights. To run them by hand instead, start uvicorn first and then the ngrok command above in a second terminal.
 
 Anyone with the URL can reach **only the bot** (not the rest of the computer), and the bot rejects any call without a valid Meta signature. While ngrok is stopped, the URL does not reach your computer at all.
 
@@ -147,13 +147,15 @@ Anyone with the URL can reach **only the bot** (not the rest of the computer), a
 
 The callback URL is configured **only once**: the static domain does not change when you restart the bot, ngrok or the computer. Messages that arrive while the bot is off are not answered; Meta retries for a while and then gives up.
 
-Moving to the real number (+506 7030 4072, which runs on the WhatsApp Business app) uses Meta's **coexistence** onboarding. See the open question in `CLAUDE.md` before attempting it.
+Moving to the real number (+506 7030 4072, which runs on the WhatsApp Business app) uses Meta's **coexistence** onboarding through Embedded Signup. Set `META_APP_ID`, `SIGNUP_CONFIG_ID` and `SIGNUP_KEY` in `.env`, run `scripts/start.sh`, and open `https://<NGROK_DOMAIN>/signup?key=<SIGNUP_KEY>` once. The page is off (404) unless all three are set. Clear `SIGNUP_KEY` afterwards. See the coexistence notes in `CLAUDE.md`.
 
 ## Troubleshooting ngrok
 
 | Problem | Cause and fix |
 |---|---|
 | The tunnel does not start (`authentication failed`, `ERR_NGROK_4018`) | The authtoken is missing or wrong. Run `ngrok config add-authtoken <token>` again with the token from the ngrok dashboard. |
+| `ngrok: command not found`, or ngrok only works with `sudo` | ngrok is in `/usr/local/bin`, which is missing from your PATH (`sudo` uses its own PATH). Run `echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc` and open a new terminal. `scripts/start.sh` also finds it there on its own. |
+| ngrok works with `sudo` but says the authtoken is missing without it | The authtoken was saved with `sudo`, in root's config. Run `ngrok config add-authtoken <token>` without `sudo`, and optionally remove root's copy with `sudo rm /root/.config/ngrok/ngrok.yml`. |
 | ngrok rejects the domain or says it is not yours | `NGROK_DOMAIN` in `.env` must match exactly the domain claimed in the ngrok dashboard (Domains), without `https://` and without a trailing slash. |
 | Another tunnel is already online | The free plan allows one tunnel at a time. Close the other ngrok window (or stop it in the dashboard, Agents) and try again. |
 | Meta says the callback URL could not be verified | The bot is not running or the verify token differs. Start it with `scripts/start.sh`, check `http://localhost:8000/health`, and make sure the verify token in Meta equals `WEBHOOK_VERIFY_TOKEN`. |

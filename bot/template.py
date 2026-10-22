@@ -29,7 +29,7 @@ HEADER_FONT = Font(bold=True, color="FFFFFF")
 
 STARTER_MENU = (
     ("1", "Cajas musicales", "productos", "Cajas musicales", "", "caja musical, cajas musicales, caja de musica, cajita musical"),
-    ("2", "Otros productos", "productos", "Otros productos", "", "otros productos, catalogo, productos"),
+    ("2", "Otros productos", "productos", "Otros productos", "", "otros productos"),
     ("3", "Hablar con una persona", "persona", "", "", "persona, humano, asesor, asesora, cotizar, cotizacion, pedido, encargar"),
 )
 

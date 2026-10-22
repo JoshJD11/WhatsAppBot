@@ -3,7 +3,13 @@ import json
 
 import httpx
 
-from bot.whatsapp import WhatsAppClient, parse_messages, parse_owner_replies, verify_signature
+from bot.whatsapp import (
+    WhatsAppClient,
+    parse_account_events,
+    parse_messages,
+    parse_owner_replies,
+    verify_signature,
+)
 
 from .conftest import APP_SECRET, CUSTOMER, PHONE_NUMBER_ID, echo_payload, sign, webhook_payload
 
@@ -132,3 +138,21 @@ def test_parse_owner_replies_ignores_customer_messages_and_incomplete_echoes():
     assert parse_owner_replies(payload) == []
     assert parse_owner_replies({"object": "page"}) == []
 
+
+
+def _account_update(value: dict) -> dict:
+    return {"object": "whatsapp_business_account", "entry": [{"changes": [{"field": "account_update", "value": value}]}]}
+
+
+def test_parse_account_events_reads_disconnection_reason():
+    payload = _account_update({"event": "PARTNER_REMOVED", "disconnection_info": {"reason": "PRIMARY_INACTIVITY"}})
+    assert parse_account_events(payload) == ["PARTNER_REMOVED (PRIMARY_INACTIVITY)"]
+
+
+def test_parse_account_events_without_reason():
+    assert parse_account_events(_account_update({"event": "ACCOUNT_VERIFIED"})) == ["ACCOUNT_VERIFIED"]
+
+
+def test_parse_account_events_ignores_other_fields():
+    assert parse_account_events(webhook_payload()) == []
+    assert parse_account_events({"object": "page", "entry": []}) == []

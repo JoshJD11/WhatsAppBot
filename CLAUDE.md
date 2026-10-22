@@ -45,6 +45,8 @@ Both modes share everything except the reply engine: WhatsApp integration, Excel
 | Conversations | The bot **only replies** to messages. It never starts a conversation with anyone, and it never sends paid template messages. |
 | Owner notification | Sent to +506 7141 3393 **only while its 24 hour window is open** (option A, see Notes). |
 | Hosting | First on the owner's computer for development, then Vercel or a similar free host. |
+| Connecting the real number | **Path 1 (chosen 2026-10-20):** the owner, as admin of their own Meta app, runs **Embedded Signup with coexistence** from a page the bot serves (`/signup`), with no Tech Provider or BSP. If Meta blocks it, the fallback is becoming a Tech Provider (free, but needs business verification and App Review). BSPs were rejected (usually paid), and moving the number fully to the API was rejected (the owner would lose the app). |
+| Coexistence trade-offs | The owner **accepted** (2026-10-20) losing in the app: broadcast lists (read only), disappearing messages, view once, live location, and the unlinking of companion devices (they can be linked again, except WhatsApp for Windows). |
 
 ## Architecture
 ```
@@ -99,7 +101,7 @@ Meta Cloud API ──webhook──► Bot server (Python)
 - **Gemini SDK:** `google-genai` with the **Interactions API** (`client.interactions.create`), as the `gemini-api-dev` skill requires. The legacy `google-generativeai` package and `generate_content` are not used.
 - **Graph API version:** `v26.0` (configurable with `GRAPH_API_VERSION`).
 - **Test runner:** pytest.
-- **Tunnel for local development:** **ngrok** with a free static domain (`ngrok http --url=<NGROK_DOMAIN> 8000`), chosen by the owner on 2026-10-18 so the Meta callback URL never changes. It replaced the Cloudflare quick tunnel (chosen 2026-10-16), whose URL changed on every run. The owner creates the ngrok account, installs the client, adds the authtoken and claims the domain; Claude never asks for or handles the authtoken. `NGROK_DOMAIN` lives in `.env`. `scripts/start.sh` starts uvicorn and ngrok together.
+- **Tunnel for local development:** **ngrok** with a free static domain (`ngrok http --url=<NGROK_DOMAIN> 8000`), chosen by the owner on 2026-10-18 so the Meta callback URL never changes. It replaced the Cloudflare quick tunnel (chosen 2026-10-16), whose URL changed on every run. The owner creates the ngrok account, installs the client, adds the authtoken and claims the domain; Claude never asks for or handles the authtoken. `NGROK_DOMAIN` lives in `.env`. `scripts/start.sh` starts uvicorn and ngrok together. **Never run ngrok with sudo** (owner asked on 2026-10-19; the cause was `/usr/local/bin` missing from PATH and the authtoken saved in root's config, and the owner chose the fix without sudo). The script refuses to run as root and falls back to `/usr/local/bin/ngrok` when ngrok is not in PATH.
 - **Not decided:** hosting provider for production. Ask before choosing it.
 
 ## Project Structure
@@ -115,6 +117,7 @@ WhatsAppBot/
 │   ├── workbook.py      # Knowledge cache and serialized writes to the Solicitudes sheet
 │   ├── excel_store.py   # DriveExcelStore (service account) and LocalExcelStore
 │   ├── whatsapp.py      # Signature check, webhook parsing, WhatsAppClient (text replies only)
+│   ├── signup.py        # One-time Embedded Signup page and onboarding calls (coexistence)
 │   ├── template.py      # Builds the Excel template
 │   ├── text.py          # Normalization, outgoing text sanitizer (no emojis, no double hyphens)
 │   └── engines/         # base.py (Reply), rule.py (menu + keywords), ai.py (LLMProvider + Gemini)
@@ -197,12 +200,19 @@ python -m scripts.create_excel_template       # Regenerate templates/bosca_bot.x
 ## Open Questions
 - **Where to keep state** (current mode, handoff pauses, owner's last message time) if the production host is serverless like Vercel. Locally it is saved in `data/state.json` (`STATE_FILE`), which a serverless host cannot keep. **Ask the owner when building it**, explaining the options in plain Spanish. Not a problem while the bot runs on the owner's computer.
 - **Excel design:** a provisional layout is built (see Current Progress). The owner will explain the final design in a later session; adjust `bot/knowledge.py` and `bot/template.py` together.
-- **Coexistence onboarding:** several sources say connecting a number that runs on the WhatsApp Business app to the Cloud API (coexistence) goes through Meta's Embedded Signup and may require being a Tech Provider or using a Business Solution Provider. Not verified against Meta's official docs. Check before moving from Meta's test number to +506 7030 4072, and confirm any provider is free.
+- **Coexistence onboarding (checked against Meta's docs on 2026-10-19):**
+  - Coexistence only works through **Embedded Signup** (Facebook Login for Business, a `config_id`, the JS SDK on an HTTPS page listed in Allowed domains). Meta's guide lists being a Solution Partner or Tech Provider as a prerequisite, but Embedded Signup also runs in development mode for the app's own admins. **Not confirmed** that a non-partner can onboard its own number; path 1 tests exactly that.
+  - Embedded Signup v2 and v3 were deprecated on 2026-10-15. In v4 the products (including WhatsApp Business app onboarding) are chosen in the Login configuration and `extras` is empty; `bot/signup.py` still sends `featureType: whatsapp_business_app_onboarding` in case it is honored. Exact v4 UI labels not verified.
+  - Costa Rica (+506) is not on any unsupported country list. WhatsApp Business app version 2.24.17+ is required (the owner's app is freshly installed from the Play Store).
+  - After onboarding: skip number registration, subscribe the app to the WABA, and start the contacts and history sync within 24 hours (each only once).
+  - Meta disconnects the number after about **14 days without opening the app on the main phone** (`account_update`, `PARTNER_REMOVED`, `PRIMARY_INACTIVITY`). Meta documents no way to prevent it. Restarting the bot does **not** reconnect it: the owner has to repeat the `/signup` flow (set `SIGNUP_KEY` again). The owner wants to avoid it; the bot logs these events, and a reminder is proposed (see Not done).
+  - The bot needs a permanent token (System User in Business Settings) instead of the 24 hour token, and the app probably has to be in Live mode to receive real customers' webhooks, which needs a privacy policy URL. The owner has a web app where they can publish it.
+  - **Bosca is not legally registered** (2026-10-20), so the Tech Provider fallback (business verification) may not be possible yet.
 - **Gemini model and free tier limits:** `GEMINI_MODEL=gemini-3.5-flash-lite` in `.env.example`. Free tier availability and limits for current models were not confirmed from an official Google page; check the live quota in AI Studio.
-- **Production host:** to be decided later (Vercel or similar).
+- **Production host:** to be decided later (Vercel or similar). The owner will stop using ngrok once the bot is hosted; then the webhook callback URL, the Facebook Login Allowed domains and `Por hacer.txt` must move to the new domain.
 
 ## Current Progress
-Last updated: 2026-10-16.
+Last updated: 2026-10-20.
 
 ### Built and verified
 - Full bot as described in Goal, Decisions Made and Admin Commands: webhook handshake and signature check, dedup by message ID, admin commands before any engine, rule engine, AI engine with automatic per-message fallback, handoff (customer reply, owner notification only inside the 24 hour window, row in `Solicitudes`, 60 minute pause), per-customer rate limit, outgoing sanitizer.
@@ -211,7 +221,9 @@ Last updated: 2026-10-16.
 
 - **Added 2026-10-16 (owner request):** the state that matters after a restart (mode, active pauses, owner's last message time) is saved to `data/state.json` and restored at startup; the saved mode wins over `BOT_MODE`. When the owner writes to a customer from the WhatsApp Business app (`smb_message_echoes` webhook, coexistence only), the bot pauses with that customer for `HANDOFF_PAUSE_MINUTES` from the owner's last message and clears its AI history.
 - **174 pytest tests pass** after these changes.
-- **Added 2026-10-18:** ngrok replaces cloudflared; `scripts/start.sh` with 8 tests (fake uvicorn and ngrok). **182 tests pass.**
+- **Added 2026-10-18:** ngrok replaces cloudflared; `scripts/start.sh` with 8 tests (fake uvicorn and ngrok). **183 tests pass.**
+- **2026-10-19:** the owner confirmed that AI mode and menu mode both work end to end with Meta's test number.
+- **Added 2026-10-20 (real number, path 1):** `bot/signup.py` with `GET /signup?key=` (page with the Embedded Signup button) and `POST /signup/complete` (code exchange, `subscribed_apps`, contacts and history sync, no registration). Both answer 404 unless `META_APP_ID`, `SIGNUP_CONFIG_ID` and `SIGNUP_KEY` (32+ chars) are set and the key matches. The business token is used only for those calls and never stored, logged or returned. `account_update` webhooks are logged as warnings. **213 tests pass.** Not yet run against Meta.
 
 ### Design choices made in this session (change if the owner disagrees)
 - **Excel layout (provisional):** sheets `Instrucciones`, `Productos`, `Preguntas`, `Menu`, `Mensajes`, `Solicitudes`, with Spanish headers matched ignoring case and accents. The template contains the menu from CLAUDE.md (1 Cajas musicales, 2 Otros productos, 3 Hablar con una persona) and the bot's default messages, but no products, prices or policies.
@@ -223,7 +235,10 @@ Last updated: 2026-10-16.
 - If the Excel never loaded, every customer message goes to handoff, so nobody gets silence.
 
 ### Not done
-- **Meta setup (2026-10-18):** the owner created the developer account, the app, the test number, the recipients, the App secret and the `.env` (steps 1 to 6 of the stage 3 guide). Pending: install ngrok, claim the static domain, set `NGROK_DOMAIN`, run `scripts/start.sh` and configure the callback URL `https://<NGROK_DOMAIN>/webhook` in Meta once. No end-to-end test with Meta has run yet. Gemini key and Drive service account are still missing. `cloudflared` was installed earlier but is no longer used.
+- **Real number onboarding (path 1):** pending Meta dashboard steps by the owner (Facebook Login for Business configuration, Allowed domains with `NGROK_DOMAIN`, `account_update` / `history` / `smb_app_state_sync` / `smb_message_echoes` webhook fields), back up the WhatsApp Business chats, run `/signup`, create the System User permanent token, switch `WHATSAPP_PHONE_NUMBER_ID`, publish the privacy policy and set the app to Live, then clear `SIGNUP_KEY`.
+- **14 day inactivity reminder: declined for now (2026-10-20, temporary).** The owner does not want the bot to remind them to open WhatsApp Business yet; ask again later. A disconnection alert was also proposed and not built.
+- **`Por hacer.txt`** (project root, Spanish, for the owner): the steps to connect the real number and the reconnection steps after a disconnect. Keep it in sync when those steps change, including when ngrok is replaced by a host.
+- Drive service account status not confirmed. `cloudflared` was installed earlier but is no longer used.
 - The owner-reply pause cannot be tested with Meta's test number; verify it after the coexistence onboarding.
 - **Owner's 24 hour window:** the owner asked whether the bot could send the daily message from the owner's number automatically after a restart. It cannot (the bot only controls the business number, and messaging the owner first needs a paid template). Saving the state to a file solved the restart part; the owner still writes once a day, optionally with a phone automation such as iPhone Shortcuts.
 

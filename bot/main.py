@@ -15,18 +15,21 @@ from datetime import timedelta
 import httpx
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
+from pydantic import BaseModel
 
 from .bot import Bot
 from .config import Settings, load_settings
 from .engines.ai import AIEngine, GeminiProvider, LLMProvider
 from .excel_store import DriveExcelStore, ExcelStore, LocalExcelStore
+from .signup import SignupClient, SignupError, render_signup_page
 from .state import BotState, StateFile
 from .whatsapp import (
     IncomingMessage,
     MessageSender,
     OwnerReply,
     WhatsAppClient,
+    parse_account_events,
     parse_messages,
     parse_owner_replies,
     verify_signature,
@@ -44,6 +47,14 @@ class Services:
     workbook: WorkbookService
     bot: Bot
     state_file: StateFile | None = None
+    signup: SignupClient | None = None
+
+
+class SignupCompletion(BaseModel):
+    key: str
+    code: str
+    waba_id: str
+    phone_number_id: str
 
 
 def build_services(
@@ -52,6 +63,7 @@ def build_services(
     store: ExcelStore,
     provider: LLMProvider | None,
     state_file: StateFile | None = None,
+    signup: SignupClient | None = None,
 ) -> Services:
     state = BotState(
         mode=settings.bot_mode,
@@ -63,7 +75,9 @@ def build_services(
     )
     workbook = WorkbookService(store)
     bot = Bot(settings, state, workbook, sender, AIEngine(provider), state_file)
-    return Services(settings=settings, state=state, workbook=workbook, bot=bot, state_file=state_file)
+    return Services(
+        settings=settings, state=state, workbook=workbook, bot=bot, state_file=state_file, signup=signup
+    )
 
 
 def _make_store(settings: Settings) -> ExcelStore:
@@ -120,8 +134,13 @@ def create_app(services: Services | None = None) -> FastAPI:
                 settings.whatsapp_token, settings.whatsapp_phone_number_id, settings.graph_api_version, http
             )
             state_file = StateFile(settings.state_file) if settings.state_file else None
+            signup = (
+                SignupClient(settings.meta_app_id, settings.meta_app_secret, settings.graph_api_version, http)
+                if settings.signup_enabled
+                else None
+            )
             current = build_services(
-                settings, sender, _make_store(settings), _make_provider(settings), state_file
+                settings, sender, _make_store(settings), _make_provider(settings), state_file, signup
             )
         await _restore_state(current)
         logger.info("Running in %s mode", current.state.mode)
@@ -176,7 +195,43 @@ def create_app(services: Services | None = None) -> FastAPI:
             background.add_task(_handle_safely, current.bot, message)
         for reply in parse_owner_replies(payload):
             background.add_task(_handle_owner_reply_safely, current.bot, reply)
+        for event in parse_account_events(payload):
+            logger.warning("Meta account update: %s", event)
         return {"status": "received"}
+
+    def _check_signup_key(services: Services, key: str) -> SignupClient:
+        # 404, not 403: while signup is off or the key is wrong, the page does not exist.
+        if services.signup is None or not services.settings.signup_enabled:
+            raise HTTPException(status_code=404)
+        if not key or not _same(key, services.settings.signup_key):
+            raise HTTPException(status_code=404)
+        return services.signup
+
+    @app.get("/signup", response_class=HTMLResponse)
+    async def signup_page(request: Request, key: str = Query("")) -> HTMLResponse:
+        current: Services = request.app.state.services
+        _check_signup_key(current, key)
+        settings = current.settings
+        page = render_signup_page(settings.meta_app_id, settings.signup_config_id, settings.graph_api_version, key)
+        return HTMLResponse(page, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+    @app.post("/signup/complete")
+    async def signup_complete(request: Request, body: SignupCompletion) -> dict[str, object]:
+        current: Services = request.app.state.services
+        client = _check_signup_key(current, body.key)
+        try:
+            result = await client.complete(body.code, body.waba_id, body.phone_number_id)
+        except SignupError as exc:
+            logger.error("Signup failed: %s", exc)
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {
+            "ok": result.ok,
+            "waba_id": result.waba_id,
+            "phone_number_id": result.phone_number_id,
+            "subscribed": result.subscribed,
+            "synced": result.synced,
+            "errors": result.errors,
+        }
 
     return app
 

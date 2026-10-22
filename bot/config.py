@@ -10,6 +10,7 @@ from typing import Literal, Mapping, cast
 
 BotMode = Literal["ai", "rule"]
 ExcelSource = Literal["drive", "local"]
+MIN_SIGNUP_KEY_LENGTH = 32
 
 
 class ConfigError(ValueError):
@@ -24,6 +25,10 @@ class Settings:
     meta_app_secret: str
     webhook_verify_token: str
     graph_api_version: str = "v26.0"
+    # One-time Embedded Signup (coexistence). The /signup page is off unless all three are set.
+    meta_app_id: str = ""
+    signup_config_id: str = ""
+    signup_key: str = ""
 
     # Gemini
     gemini_api_key: str = ""
@@ -50,6 +55,10 @@ class Settings:
     timezone: str = "America/Costa_Rica"
     # Empty disables saving the state between restarts.
     state_file: str = "data/state.json"
+
+    @property
+    def signup_enabled(self) -> bool:
+        return bool(self.meta_app_id and self.signup_config_id and self.signup_key)
 
 
 def _require(env: Mapping[str, str], name: str) -> str:
@@ -116,6 +125,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     owner_raw = env.get("OWNER_NUMBER", "").strip()
     owner_number = _phone(owner_raw, "OWNER_NUMBER") if owner_raw else ""
 
+    signup_key = env.get("SIGNUP_KEY", "").strip()
+    if signup_key and len(signup_key) < MIN_SIGNUP_KEY_LENGTH:
+        raise ConfigError(f"SIGNUP_KEY must be at least {MIN_SIGNUP_KEY_LENGTH} characters")
+
     thinking_level = env.get("GEMINI_THINKING_LEVEL", "low").strip().lower()
     if thinking_level not in ("minimal", "low", "medium", "high"):
         raise ConfigError("GEMINI_THINKING_LEVEL must be minimal, low, medium or high")
@@ -126,6 +139,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         meta_app_secret=_require(env, "META_APP_SECRET"),
         webhook_verify_token=_require(env, "WEBHOOK_VERIFY_TOKEN"),
         graph_api_version=env.get("GRAPH_API_VERSION", "v26.0").strip() or "v26.0",
+        meta_app_id=env.get("META_APP_ID", "").strip(),
+        signup_config_id=env.get("SIGNUP_CONFIG_ID", "").strip(),
+        signup_key=signup_key,
         gemini_api_key=env.get("GEMINI_API_KEY", "").strip(),
         gemini_model=_require(env, "GEMINI_MODEL"),
         gemini_thinking_level=thinking_level,

@@ -30,6 +30,11 @@ GREETINGS = frozenset(
         "pura vida",
     )
 )
+# Phrases anywhere in a message that ask for the whole catalog. They show the menu,
+# whose options list the products by category.
+CATALOG_REQUESTS = tuple(
+    normalize(phrase) for phrase in ("catalogo", "catálogo", "que venden", "que productos tienen", "que hacen")
+)
 SUMMARY_QUOTE_LIMIT = 300
 
 Match = MenuOption | FaqEntry | Product
@@ -118,6 +123,11 @@ def rule_reply(knowledge: Knowledge, message: str, is_new_conversation: bool) ->
     item = find_match(knowledge, message)
     if item is not None:
         return _answer(knowledge, item, message)
+
+    if any(contains_phrase(text, phrase) for phrase in CATALOG_REQUESTS):
+        menu_block = _menu_block(knowledge)
+        if menu_block:
+            return Reply(text=menu_block)
 
     if text in GREETINGS or is_new_conversation:
         return Reply(text=_join(knowledge.message("bienvenida"), _menu_block(knowledge)))

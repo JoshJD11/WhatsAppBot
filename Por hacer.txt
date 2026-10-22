@@ -1,0 +1,119 @@
+POR HACER: CONECTAR EL BOT AL NÚMERO DE BOSCA (+506 7030 4072)
+Actualizado: 2026-10-20
+
+Nota sobre el dominio
+Mientras el bot corra en tu computadora, el dominio es tu NGROK_DOMAIN.
+Cuando pases el bot a un hosting, todo lo que aquí dice <NGROK_DOMAIN>
+pasa a ser el dominio del hosting. Ver la sección "CUANDO DEJES DE USAR NGROK".
+
+
+====================================================================
+PARTE 1. CONECTAR TU NÚMERO REAL (hacer ahora, en este orden)
+====================================================================
+
+[ ] 1. Respaldo de chats
+       En el teléfono: WhatsApp Business > Ajustes > Chats > Copia de seguridad.
+
+[ ] 2. Agregar Facebook Login for Business
+       En developers.facebook.com, abre tu app > Agregar producto >
+       Facebook Login for Business.
+       En Settings > Client OAuth settings, activa (Yes):
+         - Client OAuth login
+         - Web OAuth login
+         - Enforce HTTPS
+         - Embedded Browser OAuth Login
+         - Use Strict Mode for redirect URIs
+         - Login with the JavaScript SDK
+       En "Allowed domains" escribe:            https://<NGROK_DOMAIN>
+       En "Valid OAuth redirect URIs" escribe:  https://<NGROK_DOMAIN>/signup
+
+[ ] 3. Crear la configuración
+       Facebook Login for Business > Configurations > Create configuration.
+       Tipo: "WhatsApp Embedded Signup".
+       Si te deja elegir productos, marca la opción de conectar un número
+       de la app WhatsApp Business (coexistencia).
+       Copia el ID de la configuración.
+
+[ ] 4. Webhooks
+       WhatsApp > Configuration > Webhook fields. Además de "messages",
+       suscribe: account_update, history, smb_app_state_sync,
+       smb_message_echoes.
+
+[ ] 5. Llenar el .env
+       META_APP_ID=        (App settings > Basic > App ID)
+       SIGNUP_CONFIG_ID=   (el ID del paso 3)
+       SIGNUP_KEY=         (genérala con este comando:)
+           python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+[ ] 6. Conectar el número
+       a) Ejecuta: scripts/start.sh
+       b) En la computadora abre:
+          https://<NGROK_DOMAIN>/signup?key=<SIGNUP_KEY>
+       c) Presiona "Conectar con Facebook" y sigue los pasos con el teléfono
+          en la mano y WhatsApp Business abierto.
+       d) Cuando pregunte si compartir el historial, puedes decir que NO.
+          El bot no lo necesita.
+       e) IMPORTANTE: si la ventana te ofrece crear un número NUEVO en lugar
+          de conectar el tuyo, cancela y avísale a Claude.
+       f) Copia lo que aparezca en "Resultado" y pásaselo a Claude.
+          No contiene secretos.
+
+[ ] 7. Con ayuda de Claude
+       - Crear el token permanente: Business Settings > System Users.
+         Va en WHATSAPP_TOKEN.
+       - Cambiar WHATSAPP_PHONE_NUMBER_ID al ID de tu número real
+         (sale en el "Resultado").
+       - Publicar la política de privacidad en tu app web y poner su URL
+         en App settings > Basic.
+       - Pasar la app de Meta a modo Live.
+       - Probar con un cliente real, y probar que el bot se calla cuando
+         respondes tú desde la app.
+
+[ ] 8. Borrar SIGNUP_KEY del .env y reiniciar el bot.
+       Así la página /signup deja de existir.
+
+
+====================================================================
+PARTE 2. SI META DESCONECTA TU NÚMERO
+====================================================================
+
+Por qué pasa
+Meta desconecta el número si no abres WhatsApp Business en el teléfono
+principal durante unos 14 días. Basta con abrir la app; no hace falta
+escribir nada. Por ahora el bot NO te lo recuerda (decisión temporal).
+
+Cómo te das cuenta
+  - El bot deja de responder a los clientes. La app del teléfono sigue
+    funcionando y puedes contestar a mano.
+  - En la terminal del bot aparece:
+    Meta account update: PARTNER_REMOVED (PRIMARY_INACTIVITY)
+
+Qué hacer
+Reiniciar el bot NO reconecta el número: la conexión se pierde en Meta,
+no en el bot. Hay que repetir la conexión.
+[ ] 1. Abre WhatsApp Business en el teléfono principal.
+[ ] 2. Vuelve a poner SIGNUP_KEY en el .env (puede ser una clave nueva).
+[ ] 3. Ejecuta: scripts/start.sh
+[ ] 4. Abre https://<NGROK_DOMAIN>/signup?key=<SIGNUP_KEY> y repite el
+       paso 6 de la Parte 1.
+[ ] 5. Revisa en "Resultado" que phone_number_id sea igual a
+       WHATSAPP_PHONE_NUMBER_ID del .env. Si cambió, actualízalo.
+[ ] 6. Si Meta pide permisos de nuevo, revisa que el token permanente
+       (WHATSAPP_TOKEN) siga funcionando. Si el bot no logra enviar
+       mensajes, genera uno nuevo en System Users.
+[ ] 7. Borra SIGNUP_KEY del .env y reinicia el bot.
+[ ] 8. Envíate un mensaje de prueba desde otro número.
+
+
+====================================================================
+CUANDO DEJES DE USAR NGROK (hosting en el futuro)
+====================================================================
+El dominio cambia, así que hay que actualizar:
+[ ] Callback URL del webhook en Meta: https://<dominio-nuevo>/webhook
+[ ] Allowed domains y Valid OAuth redirect URIs de Facebook Login for
+    Business (si vuelves a usar /signup).
+[ ] Las direcciones de /signup de este archivo usan el dominio nuevo.
+[ ] Antes de elegir el hosting, decidir con Claude dónde guardar el estado
+    (modo, pausas, ventana de 24 horas). Un hosting como Vercel no guarda
+    el archivo data/state.json.
+[ ] El bot ya no dependerá de que tu computadora esté encendida.

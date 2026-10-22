@@ -62,3 +62,17 @@ def test_load_settings_drive_source_requires_file_id_and_credentials():
 def test_load_settings_invalid_value_raises(key, value):
     with pytest.raises(ConfigError):
         load_settings({**BASE_ENV, key: value})
+
+
+def test_signup_is_disabled_by_default():
+    assert load_settings(BASE_ENV).signup_enabled is False
+
+
+def test_signup_is_enabled_when_all_settings_are_present():
+    env = {**BASE_ENV, "META_APP_ID": "1", "SIGNUP_CONFIG_ID": "2", "SIGNUP_KEY": "k" * 32}
+    assert load_settings(env).signup_enabled is True
+
+
+def test_short_signup_key_is_rejected():
+    with pytest.raises(ConfigError, match="SIGNUP_KEY"):
+        load_settings({**BASE_ENV, "SIGNUP_KEY": "short"})

@@ -62,6 +62,7 @@ def sandbox(tmp_path):
         "PORT": str(_free_port()),
         "NGROK_ARGS_FILE": str(tmp_path / "ngrok_args"),
         "HOME": str(tmp_path),
+        "NGROK_FALLBACK": str(tmp_path / "no-ngrok-here"),
     }
     return tmp_path, env_file, env
 
@@ -117,6 +118,16 @@ def test_script_requires_ngrok(sandbox):
     result = _run(env)
     assert result.returncode == 1
     assert "ngrok is not installed" in result.stderr
+
+
+def test_script_finds_ngrok_outside_path(sandbox):
+    tmp_path, env_file, env = sandbox
+    env_file.write_text("NGROK_DOMAIN=bosca-test.ngrok-free.app\n")
+    env["PATH"] = "/usr/bin:/bin"
+    env["NGROK_FALLBACK"] = str(tmp_path / "bin" / "ngrok")
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    assert "--url=bosca-test.ngrok-free.app" in (tmp_path / "ngrok_args").read_text()
 
 
 def test_script_fails_if_bot_does_not_start(sandbox):

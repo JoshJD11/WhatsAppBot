@@ -3,7 +3,7 @@
 #
 # Usage: scripts/start.sh
 # Reads NGROK_DOMAIN from .env (ENV_FILE overrides the path). PORT defaults to 8000.
-# Ctrl+C stops both processes.
+# Ctrl+C stops both processes. Never run it with sudo: ngrok does not need root.
 
 set -euo pipefail
 
@@ -11,6 +11,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/.env}"
 PORT="${PORT:-8000}"
 UVICORN="${UVICORN:-$ROOT/.venv/bin/uvicorn}"
+# Used when ngrok is installed but its folder is missing from PATH.
+NGROK_FALLBACK="${NGROK_FALLBACK:-/usr/local/bin/ngrok}"
 
 fail() {
     echo "Error: $1" >&2
@@ -26,7 +28,12 @@ NGROK_DOMAIN="$(printf '%s' "$NGROK_DOMAIN" | tr -d '"'"'"' \r' | sed -e 's#^htt
 [[ -n "$NGROK_DOMAIN" ]] || fail "NGROK_DOMAIN is empty in $ENV_FILE. Put your static ngrok domain there."
 [[ "$NGROK_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || fail "NGROK_DOMAIN '$NGROK_DOMAIN' is not a valid domain."
 [[ "$PORT" =~ ^[0-9]+$ ]] || fail "PORT must be a number."
-command -v ngrok >/dev/null 2>&1 || fail "ngrok is not installed or not in PATH."
+[[ "$EUID" -ne 0 ]] || fail "Do not run this script with sudo. ngrok and the bot must run as your user."
+NGROK="$(command -v ngrok 2>/dev/null || true)"
+if [[ -z "$NGROK" && -x "$NGROK_FALLBACK" ]]; then
+    NGROK="$NGROK_FALLBACK"
+fi
+[[ -n "$NGROK" ]] || fail "ngrok is not installed or not in PATH."
 [[ -x "$UVICORN" ]] || fail "$UVICORN not found. Create the virtual environment first (see README)."
 
 cd "$ROOT"
@@ -46,4 +53,4 @@ done
 curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 || fail "The bot did not answer on port $PORT after 30 seconds."
 
 echo "Bot running on port $PORT. Webhook URL for Meta: https://$NGROK_DOMAIN/webhook"
-ngrok http --url="$NGROK_DOMAIN" "$PORT"
+"$NGROK" http --url="$NGROK_DOMAIN" "$PORT"
