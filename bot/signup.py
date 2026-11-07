@@ -6,7 +6,9 @@ exchangeable code to `/signup/complete`, which finishes the onboarding:
 
 1. Exchange the code for a business token (the code lives about 30 seconds).
 2. Subscribe this app to the WhatsApp Business Account so webhooks arrive.
-3. Start the contacts and history sync that Meta expects within 24 hours.
+3. Find the phone number ID when Meta's session event did not include it
+   (coexistence onboarding may send only the WABA ID).
+4. Start the contacts and history sync that Meta expects within 24 hours.
 
 The number is already registered by the WhatsApp Business app, so there is no
 registration step. The token is used for these calls only and never stored,
@@ -39,7 +41,7 @@ class SignupResult:
 
     @property
     def ok(self) -> bool:
-        return self.subscribed and all(self.synced.values())
+        return self.subscribed and bool(self.synced) and all(self.synced.values())
 
 
 def is_graph_id(value: str) -> bool:
@@ -88,8 +90,30 @@ class SignupClient:
             return type(exc).__name__
         return _error_text(response) if response.is_error else None
 
-    async def complete(self, code: str, waba_id: str, phone_number_id: str) -> SignupResult:
-        if not (is_graph_id(waba_id) and is_graph_id(phone_number_id)):
+    async def _find_phone_number_id(self, waba_id: str, token: str) -> tuple[str, str | None]:
+        """The WABA's only phone number ID, or ("", error text) when there is not exactly one."""
+        try:
+            response = await self._http.get(
+                f"{self._base}/{waba_id}/phone_numbers",
+                params={"fields": "id,display_phone_number"},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=15,
+            )
+        except httpx.HTTPError as exc:
+            return "", type(exc).__name__
+        if response.is_error:
+            return "", _error_text(response)
+        numbers = response.json().get("data", [])
+        if len(numbers) != 1:
+            found = ", ".join(f"{n.get('display_phone_number', '?')} ({n.get('id', '?')})" for n in numbers)
+            return "", f"expected 1 number, found {len(numbers)}: {found}"[:300]
+        phone_number_id = str(numbers[0].get("id", ""))
+        if not is_graph_id(phone_number_id):
+            return "", "the number has no valid ID"
+        return phone_number_id, None
+
+    async def complete(self, code: str, waba_id: str, phone_number_id: str = "") -> SignupResult:
+        if not is_graph_id(waba_id) or (phone_number_id and not is_graph_id(phone_number_id)):
             raise SignupError("waba_id and phone_number_id must be numeric")
         token = await self._exchange_code(code)
         result = SignupResult(waba_id=waba_id, phone_number_id=phone_number_id)
@@ -98,6 +122,14 @@ class SignupClient:
         result.subscribed = error is None
         if error:
             result.errors.append(f"subscribed_apps: {error}")
+
+        if not phone_number_id:
+            phone_number_id, error = await self._find_phone_number_id(waba_id, token)
+            result.phone_number_id = phone_number_id
+            if error:
+                result.errors.append(f"phone_numbers: {error}")
+                logger.error("Signup step failed: phone_numbers: %s", error)
+                return result
 
         for sync_type in SYNC_TYPES:
             error = await self._post(
@@ -160,7 +192,10 @@ Meta te pedirá escanear un código o confirmar en la app.</p>
       const data = JSON.parse(event.data);
       if (data.type !== "WA_EMBEDDED_SIGNUP") return;
       show("Evento de Meta: " + data.event);
-      if (data.event && data.event.startsWith("FINISH")) session = data.data;
+      if (data.event && data.event.startsWith("FINISH")) {{
+        session = data.data || {{}};
+        show("Datos de Meta: " + JSON.stringify(session));
+      }}
       if (data.event === "CANCEL") show("Cancelado o con error: " + JSON.stringify(data.data));
     }} catch (error) {{ /* Other Facebook messages are not JSON. */ }}
   }});
@@ -172,12 +207,12 @@ Meta te pedirá escanear un código o confirmar en la app.</p>
 
   async function finish(code) {{
     const info = await waitForSession();
-    if (!info) {{ show("Meta no envió el ID del número. Revisa la configuración y vuelve a intentar."); return; }}
+    if (!info || !info.waba_id) {{ show("Meta no envió el ID de la cuenta de WhatsApp (waba_id). Copia este resultado y revísalo antes de reintentar."); return; }}
     show("Terminando la conexión en el servidor...");
     const response = await fetch("/signup/complete", {{
       method: "POST",
       headers: {{ "Content-Type": "application/json" }},
-      body: JSON.stringify({{ key: KEY, code: code, waba_id: info.waba_id, phone_number_id: info.phone_number_id }}),
+      body: JSON.stringify({{ key: KEY, code: code, waba_id: info.waba_id, phone_number_id: info.phone_number_id || "" }}),
     }});
     show(JSON.stringify(await response.json(), null, 2));
   }}

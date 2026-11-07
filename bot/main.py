@@ -15,7 +15,8 @@ from datetime import timedelta
 import httpx
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from .bot import Bot
@@ -54,7 +55,8 @@ class SignupCompletion(BaseModel):
     key: str
     code: str
     waba_id: str
-    phone_number_id: str
+    # Coexistence onboarding may send only the WABA ID; the client looks the number up.
+    phone_number_id: str = ""
 
 
 def build_services(
@@ -157,6 +159,11 @@ def create_app(services: Services | None = None) -> FastAPI:
                 await http.aclose()
 
     app = FastAPI(title="Bosca WhatsApp bot", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI's default 422 echoes the request body, which may hold SIGNUP_KEY.
+        return JSONResponse(status_code=422, content={"detail": "Invalid request"})
 
     @app.get("/health")
     async def health() -> dict[str, str]:
